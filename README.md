@@ -13,6 +13,16 @@ question ─► LangChain agent (Claude) ─► read-only tools ─► Solana RP
                                    (:Wallet)-[:HOLDS]->(:Token)   (:Wallet)-[:SIGNED]->(:Transaction)
 ```
 
+## Status (v0.1, 2026-11-09)
+
+| Part | Verified how |
+|---|---|
+| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 39 offline tests, and the CLI run against live Solana devnet |
+| Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
+| FastAPI routes | In-process tests (`TestClient`) |
+| LangChain agent loop | Tested with a scripted fake model; **not yet run against live Claude** |
+| Apache AGE backend | Integration test written; **not yet run against a real AGE database** |
+
 ## What it can answer
 
 | Ask | Tool | Source |
