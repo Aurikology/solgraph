@@ -19,12 +19,12 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 
 | Part | Verified how |
 |---|---|
-| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 46 offline tests, and the CLI run against live Solana devnet |
+| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 47 offline tests, and the CLI run against live Solana devnet |
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
-| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (47/47, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
+| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (48/48, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
 
@@ -90,9 +90,11 @@ uvicorn solgraph.api:app        # then open http://127.0.0.1:8000/docs
 ### Use Apache AGE instead of the in-memory graph
 
 ```bash
-docker compose up -d            # Postgres 16 + AGE 1.6.0 on localhost:5455
-export SOLGRAPH_PG_DSN=postgresql://solgraph:solgraph@localhost:5455/solgraph
+docker compose up -d            # Postgres 16 + AGE 1.6.0 on 127.0.0.1:5455 (not "localhost": see below)
+export SOLGRAPH_PG_DSN=postgresql://solgraph:solgraph@127.0.0.1:5455/solgraph
 ```
+
+Use `127.0.0.1`, not `localhost`. Docker publishes the port on IPv4 only, and on Windows `localhost` tries IPv6 first: each connection then hangs for about two minutes before falling back (measured: 130 s against 0.02 s).
 
 The graph then persists and can be queried directly in Cypher:
 
@@ -126,7 +128,7 @@ The project depends on `solana-agent-kit-py` 1.4.0 as asked, but as of 2026-11-0
 ## Tests
 
 ```bash
-python -m pytest            # 46 tests against a fake RPC and a fake model, no network
+python -m pytest            # 47 tests against a fake RPC and a fake model, no network
 SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache AGE test
 ```
 

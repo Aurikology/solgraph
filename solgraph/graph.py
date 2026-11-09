@@ -168,13 +168,22 @@ def _agtype(v: str | None):
 class AgeGraph:
     """Apache AGE on PostgreSQL. Needs the `age` extension (see docker-compose.yml)."""
 
-    def __init__(self, dsn: str, graph: str = "solgraph"):
+    def __init__(self, dsn: str, graph: str = "solgraph", connect_timeout: int = 10):
         import psycopg  # imported here so the in-memory path needs no Postgres driver
 
         if not re.fullmatch(r"[a-z_][a-z0-9_]*", graph):
             raise ValueError("graph name must be lowercase letters, digits and _")
         self.graph = graph
-        self.conn = psycopg.connect(dsn, autocommit=True)
+        try:
+            # connect_timeout: an unreachable host fails in seconds with this message instead
+            # of hanging on the OS TCP timeout (about two minutes on Windows)
+            self.conn = psycopg.connect(dsn, autocommit=True, connect_timeout=connect_timeout)
+        except psycopg.OperationalError as e:
+            raise ConnectionError(
+                f"Could not connect to Postgres for the graph ({e.__class__.__name__}). Is the "
+                "database running (`docker compose up -d`)? Use 127.0.0.1 rather than localhost "
+                "in SOLGRAPH_PG_DSN: Docker publishes the port on IPv4 only, and localhost may "
+                "try IPv6 first. Or unset SOLGRAPH_PG_DSN to use the in-memory graph.") from e
         with self.conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS age")
             cur.execute("LOAD 'age'")

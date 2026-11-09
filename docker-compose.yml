@@ -1,6 +1,6 @@
 # PostgreSQL 16 with Apache AGE, for the graph backend.
 #   docker compose up -d
-#   then set SOLGRAPH_PG_DSN=postgresql://solgraph:solgraph@localhost:5455/solgraph
+#   then set SOLGRAPH_PG_DSN=postgresql://solgraph:solgraph@127.0.0.1:5455/solgraph
 services:
   age:
     image: apache/age:release_PG16_1.6.0
