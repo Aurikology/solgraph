@@ -4,11 +4,11 @@ import httpx
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from solgraph.graph import MemoryGraph, _lit, counterparties, trace_origin
+from solgraph.graph import MemoryGraph, _kind, _lit, counterparties, trace_origin
 from solgraph.ingest import ingest_wallet
-from solgraph.models import Address, SOL_MINT
+from solgraph.models import Address, SOL_MINT, Transfer, TxRecord
 from solgraph.monitor import diff
-from solgraph.rpc import RpcError, SolanaRpc, parse_transaction
+from solgraph.rpc import RpcError, SolanaRpc, classify_account, parse_transaction
 
 from .conftest import ALICE, BOB, FUNDER, MINT, MINTER, TXS, make_handler
 
@@ -99,7 +99,8 @@ def test_rpc_never_sends_transactions():
     import solgraph.rpc as m
     import re
     used = set(re.findall(r'self\.call\(\s*"(\w+)"', inspect.getsource(m)))
-    assert used == {"getBalance", "getTokenAccountsByOwner", "getSignaturesForAddress", "getTransaction"}
+    assert used == {"getBalance", "getTokenAccountsByOwner", "getSignaturesForAddress",
+                    "getTransaction", "getMultipleAccounts"}
 
 
 # --- graph ------------------------------------------------------------------------------------
@@ -137,3 +138,57 @@ def test_diff_reports_only_changes():
     assert diff({"SOL": 1.0, MINT: 5.0}, {"SOL": 1.0, MINT: 7.5, "X": 1}) == [
         {"mint": MINT, "before": 5.0, "after": 7.5, "change": 2.5},
         {"mint": "X", "before": 0.0, "after": 1, "change": 1}]
+
+
+# --- account kinds ----------------------------------------------------------------------------
+
+def test_classify_account():
+    assert classify_account({"owner": "1" * 32, "executable": False}) == "user"
+    assert classify_account({"owner": "BPFLoaderUpgradeab1e11111111111111111111111",
+                             "executable": True}) == "program"
+    assert classify_account({"owner": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+                             "executable": False}) == "program_account"
+    assert classify_account(None) == "unknown"
+
+
+def test_ingest_records_kinds_in_batches(rpc):
+    g = _loaded(rpc)
+    assert set(g.kinds([ALICE, BOB, FUNDER, MINTER]).values()) == {"user"}
+    calls: list = []
+    rpc2 = SolanaRpc("http://fake", backoff=0,
+                     client=httpx.Client(transport=httpx.MockTransport(make_handler(calls))))
+    assert len(rpc2.account_kinds([ALICE] * 3 + [f"{i:0>44}".replace("0", "z") for i in range(150)])) == 151
+    assert calls.count("getMultipleAccounts") == 2  # 151 addresses, 100 per call
+
+
+def test_ingest_survives_kind_lookup_failure(rpc):
+    class NoKinds(SolanaRpc):
+        def account_kinds(self, addresses):
+            raise RpcError("rate limited")
+    flaky = NoKinds("http://fake", backoff=0, client=rpc.http)
+    g = MemoryGraph()
+    rep = ingest_wallet(flaky, g, ALICE)
+    assert rep.transactions == 4 and not rep.kinds_known
+    assert g.kinds([BOB]) == {BOB: "unknown"}
+
+
+VAULT = "Vau1t" + "V" * 39
+TRADER = "Trader" + "T" * 38
+
+
+def test_trace_stops_at_program_accounts():
+    g = MemoryGraph()
+    def tx(sig, src, dst):
+        return TxRecord(signature=sig, slot=1, block_time=1, fee_sol=0, success=True, signers=[src],
+                        transfers=[Transfer(signature=sig, source=src, destination=dst,
+                                            mint=SOL_MINT, amount=1.0)])
+    g.add_transaction(tx("a" * 64, TRADER, VAULT))   # someone else swaps into the pool
+    g.add_transaction(tx("b" * 64, VAULT, ALICE))    # Alice swaps out of it
+    assert [(e.source, e.destination) for e in trace_origin(g, ALICE, SOL_MINT)] ==         [(VAULT, ALICE), (TRADER, VAULT)]            # kind unknown: followed
+    g.set_kinds({VAULT: "program_account"})
+    assert [(e.source, e.destination) for e in trace_origin(g, ALICE, SOL_MINT)] == [(VAULT, ALICE)]
+
+
+def test_kind_values_are_whitelisted():
+    with pytest.raises(ValueError):
+        _kind("user' }) DETACH DELETE n //")

@@ -1,14 +1,17 @@
 """The relationship graph: wallets, tokens, transactions, and the transfers between wallets.
 
-    (:Wallet {address})  -[:TRANSFER {signature, mint, amount, block_time}]->  (:Wallet)
-    (:Wallet)            -[:HOLDS {amount}]->                                  (:Token {mint})
-    (:Wallet)            -[:SIGNED]->                                          (:Transaction {signature, slot, ...})
+    (:Wallet {address, kind})  -[:TRANSFER {signature, mint, amount, block_time}]->  (:Wallet)
+    (:Wallet)                  -[:HOLDS {amount}]->                            (:Token {mint})
+    (:Wallet)                  -[:SIGNED]->                                          (:Transaction {signature, slot, ...})
 
 Two backends share one interface. `AgeGraph` stores it in PostgreSQL with Apache AGE and
 queries it in Cypher. `MemoryGraph` keeps it in Python dictionaries, so the app and the tests
 run without a database. Multi-hop questions ("where did these tokens come from?") are
 answered by `trace_origin`, which walks one-hop queries breadth-first, so both backends give
 the same answer.
+
+`kind` says whether an address is a person's wallet (`user`), a program, or an account a
+program controls (`program_account`: pool vaults, PDAs, token accounts). See models.KINDS.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Protocol
 
-from .models import SOL_MINT, Transfer, TxRecord, WalletBalances
+from .models import KINDS, PROGRAM_KINDS, SOL_MINT, Transfer, TxRecord, WalletBalances
 
 _SAFE = re.compile(r"^(?:SOL|[1-9A-HJ-NP-Za-km-z]{32,90})$")
 
@@ -41,13 +44,19 @@ class GraphStore(Protocol):
     def outgoing(self, address: str, mint: str | None = None) -> list[Edge]: ...
     def holdings(self, address: str) -> dict[str, float]: ...
     def stats(self) -> dict[str, int]: ...
+    def set_kinds(self, kinds: dict[str, str]) -> None: ...
+    def kinds(self, addresses) -> dict[str, str]: ...
 
 
 # --- shared queries over either backend --------------------------------------------------------
 
 def trace_origin(g: GraphStore, address: str, mint: str, depth: int = 3,
                  max_edges: int = 50) -> list[Edge]:
-    """Breadth-first walk backwards along TRANSFER edges of one asset."""
+    """Breadth-first walk backwards along TRANSFER edges of one asset.
+
+    The walk records an edge from a program or program-owned account but does not continue
+    past it: everything that ever went into a pool vault is not where this wallet's tokens
+    came from. Addresses of unknown kind are followed."""
     seen_sig: set[tuple[str, str, str]] = set()
     found: list[Edge] = []
     queue = deque([(address, 0)])
@@ -64,7 +73,8 @@ def trace_origin(g: GraphStore, address: str, mint: str, depth: int = 3,
             found.append(e)
             if e.source not in visited:
                 visited.add(e.source)
-                queue.append((e.source, d + 1))
+                if g.kinds([e.source]).get(e.source) not in PROGRAM_KINDS:
+                    queue.append((e.source, d + 1))
     return found
 
 
@@ -89,6 +99,7 @@ class MemoryGraph:
         self._holds: dict[str, dict[str, float]] = {}
         self._in: dict[str, list[Edge]] = defaultdict(list)
         self._out: dict[str, list[Edge]] = defaultdict(list)
+        self._kinds: dict[str, str] = {}
 
     def add_transaction(self, tx: TxRecord) -> None:
         self.txs[tx.signature] = tx
@@ -114,6 +125,12 @@ class MemoryGraph:
     def holdings(self, address):
         return dict(self._holds.get(address, {}))
 
+    def set_kinds(self, kinds):
+        self._kinds.update({a: _kind(k) for a, k in kinds.items()})
+
+    def kinds(self, addresses):
+        return {a: self._kinds.get(a, "unknown") for a in addresses}
+
     def stats(self):
         wallets = {a for k in self.edges for a in k[1:3]} | set(self._holds)
         mints = {k[3] for k in self.edges} | {m for h in self._holds.values() for m in h}
@@ -129,6 +146,12 @@ def _lit(s: str) -> str:
     if not _SAFE.fullmatch(s):
         raise ValueError(f"refusing to put {s!r} into a Cypher query")
     return f"'{s}'"
+
+
+def _kind(k: str) -> str:
+    if k not in KINDS:
+        raise ValueError(f"unknown account kind {k!r}")
+    return k
 
 
 def _num(x: float | int | None) -> str:
@@ -211,6 +234,20 @@ class AgeGraph:
         rows = self._cypher(f"MATCH (w:Wallet {{address: {_lit(address)}}})-[h:HOLDS]->(k:Token) "
                             "RETURN k.mint, h.amount", ("mint", "amount"))
         return dict(rows)
+
+    def set_kinds(self, kinds):
+        for a, k in kinds.items():
+            self._cypher(f"MERGE (w:Wallet {{address: {_lit(a)}}}) "
+                         f"SET w.kind = '{_kind(k)}' RETURN w.kind")
+
+    def kinds(self, addresses):
+        addresses = list(addresses)
+        if not addresses:
+            return {}
+        lst = ", ".join(_lit(a) for a in addresses)
+        rows = dict(self._cypher(f"MATCH (w:Wallet) WHERE w.address IN [{lst}] "
+                                 "RETURN w.address, w.kind", ("a", "k")))
+        return {a: rows.get(a) or "unknown" for a in addresses}
 
     def stats(self):
         out = {}

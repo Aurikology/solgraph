@@ -14,6 +14,10 @@ from pydantic import AfterValidator, BaseModel, Field
 BASE58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 SOL_MINT = "SOL"  # native SOL has no mint account; the graph uses this marker instead
 LAMPORTS_PER_SOL = 1_000_000_000
+# What an address is, from its on-chain owner (see rpc.classify_account). Traces stop at the
+# two program kinds: walking back through a DEX vault would fan out into unrelated users.
+KINDS = ("user", "program", "program_account", "unknown")
+PROGRAM_KINDS = frozenset({"program", "program_account"})
 
 
 def _check_address(v: str) -> str:

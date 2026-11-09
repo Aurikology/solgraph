@@ -26,7 +26,7 @@ def test_api_routes(client):
     assert client.get(f"/wallet/{ALICE}/balances").json()["sol"] == 1.1
     assert client.post(f"/wallet/{BOB}/ingest?limit=5").json()["loaded_transactions"] == 2
     client.post(f"/wallet/{ALICE}/ingest")
-    assert len(client.get(f"/wallet/{BOB}/origin/SOL").json()) == 2
+    assert len(client.get(f"/wallet/{BOB}/origin/SOL").json()["transfers"]) == 2
     assert client.get("/wallet/nope/balances").status_code == 422
 
 
@@ -43,3 +43,5 @@ def test_age_backend_matches_memory(rpc):
     assert sorted((e.source, e.destination) for e in edges) == [(ALICE, BOB), (FUNDER, ALICE)]
     assert g.holdings(ALICE)["SOL"] == 1.1
     assert g.stats()["transfers"] >= 3
+    assert g.kinds([ALICE, BOB, "Vau1t" + "V" * 39]) == {
+        ALICE: "user", BOB: "user", "Vau1t" + "V" * 39: "unknown"}

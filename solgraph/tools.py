@@ -66,6 +66,13 @@ class Toolbox:
         self.graph.set_holdings(bal)
         return bal.model_dump_json()
 
+    def _with_kinds(self, edges) -> list[dict]:
+        """Edges as dicts, with what each end is: a user wallet, a program, or a
+        program-owned account such as a pool vault."""
+        kinds = self.graph.kinds({a for e in edges for a in (e.source, e.destination)})
+        return [vars(e) | {"source_kind": kinds[e.source],
+                           "destination_kind": kinds[e.destination]} for e in edges]
+
     def recent_transactions(self, address: str, limit: int = 10) -> str:
         rep = ingest_wallet(self.rpc, self.graph, address, limit, with_balances=False)
         edges = self.graph.incoming(address) + self.graph.outgoing(address)
@@ -73,7 +80,7 @@ class Toolbox:
         return json.dumps({
             "loaded_transactions": rep.transactions,
             "could_not_load": len(rep.failed),
-            "transfers": [vars(e) for e in edges[:40]],
+            "transfers": self._with_kinds(edges[:40]),
         })
 
     def wallet_counterparties(self, address: str) -> str:
@@ -81,7 +88,9 @@ class Toolbox:
         if not rows:
             return json.dumps({"note": "No transfers for this wallet in the graph yet. "
                                        "Call recent_transactions first to load its history."})
-        return json.dumps(rows[:25])
+        rows = rows[:25]
+        kinds = self.graph.kinds({r["wallet"] for r in rows})
+        return json.dumps([r | {"kind": kinds[r["wallet"]]} for r in rows])
 
     def trace_token_origin(self, address: str, mint: str, depth: int = 3) -> str:
         edges = trace_origin(self.graph, address, mint, depth)
@@ -89,7 +98,11 @@ class Toolbox:
             return json.dumps({"note": "No incoming transfers of this asset in the graph. Load "
                                        "this wallet's history (and its senders') with "
                                        "recent_transactions, then trace again."})
-        return json.dumps([vars(e) for e in edges])
+        return json.dumps({
+            "transfers": self._with_kinds(edges),
+            "note": "The trace stops at program and program_account sources (pool vaults, "
+                    "PDAs): tokens there came from a swap or a program, not from a person.",
+        })
 
     def token_info(self, query: str) -> str:
         if self.market is None:
@@ -135,9 +148,11 @@ def build_tools(box: Toolbox) -> list[StructuredTool]:
         ("recent_transactions", RecentIn,
          "Load a wallet's recent transactions into the graph and list the transfers in and out."),
         ("wallet_counterparties", WalletIn,
-         "Wallets this one has sent to or received from, with totals per asset. Uses the graph."),
+         "Wallets this one has sent to or received from, with totals per asset and each "
+         "counterparty's kind (user, program, program_account). Uses the graph."),
         ("trace_token_origin", TraceIn,
-         "Follow an asset backwards through the graph to show where a wallet's tokens came from."),
+         "Follow an asset backwards through the graph to show where a wallet's tokens came from. "
+         "Stops at programs and program-owned accounts such as DEX pool vaults."),
         ("token_info", TokenIn, "Name, symbol and USD price of a token, by mint address or ticker."),
         ("check_wallet_changes", WalletIn,
          "Compare a wallet's balances with the last time it was checked and report what changed."),

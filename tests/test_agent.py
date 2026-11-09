@@ -34,7 +34,10 @@ def test_tools_end_to_end(box):
     assert hist["loaded_transactions"] == 2
     tools["recent_transactions"].invoke({"address": ALICE})
     trace = json.loads(tools["trace_token_origin"].invoke({"address": BOB, "mint": MINT}))
-    assert len(trace) == 2
+    assert len(trace["transfers"]) == 2
+    assert {t["source_kind"] for t in trace["transfers"]} == {"user"}
+    cps = json.loads(tools["wallet_counterparties"].invoke({"address": ALICE}))
+    assert {c["kind"] for c in cps} == {"user"}
     assert json.loads(tools["check_wallet_changes"].invoke({"address": ALICE}))["first_snapshot"]
     assert json.loads(tools["check_wallet_changes"].invoke({"address": ALICE}))["changes"] == []
     assert json.loads(tools["token_info"].invoke({"query": "USDC"}))["price_usd"] == 1.0

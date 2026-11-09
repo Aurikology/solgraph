@@ -26,6 +26,7 @@ TOKEN_PROGRAMS = (
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # SPL Token
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022
 )
+SYSTEM_PROGRAM = "11111111111111111111111111111111"
 DUST = 1e-9
 
 
@@ -91,6 +92,31 @@ class SolanaRpc:
         tx = self.call("getTransaction", [signature, {"encoding": "jsonParsed",
                                                       "maxSupportedTransactionVersion": 0}])
         return parse_transaction(signature, tx) if tx else None
+
+    def account_kinds(self, addresses) -> dict[str, str]:
+        """Who is behind each address: a person's wallet, a program, or an account a program
+        owns (a pool vault, a PDA, a token account). One `getMultipleAccounts` call per 100
+        addresses, asking for zero bytes of account data."""
+        addrs = list(dict.fromkeys(addresses))
+        out: dict[str, str] = {}
+        for i in range(0, len(addrs), 100):
+            chunk = addrs[i:i + 100]
+            res = self.call("getMultipleAccounts",
+                            [chunk, {"encoding": "base64", "dataSlice": {"offset": 0, "length": 0}}])
+            for addr, acct in zip(chunk, res["value"]):
+                out[addr] = classify_account(acct)
+        return out
+
+
+def classify_account(acct: dict | None) -> str:
+    """`user` = owned by the System Program, so a keypair controls it. `program` = executable
+    code. `program_account` = state some program controls. `unknown` = no account on chain
+    (closed, or never funded)."""
+    if acct is None:
+        return "unknown"
+    if acct.get("executable"):
+        return "program"
+    return "user" if acct.get("owner") == SYSTEM_PROGRAM else "program_account"
 
 
 def parse_transaction(signature: str, tx: dict) -> TxRecord:

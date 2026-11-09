@@ -23,6 +23,8 @@ MINTER = "MinterWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"[:44]
 MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 SYS = "11111111111111111111111111111111"
 
+USERS = {ALICE, BOB, FUNDER, MINTER}  # System Program-owned in the fake chain
+
 FEE = 5000
 
 
@@ -92,6 +94,9 @@ def make_handler(calls: list | None = None, fail_first: int = 0):
             res = [{"signature": s} for s in BY_WALLET.get(p[0], [])][: p[1]["limit"]]
         elif m == "getTransaction":
             res = TXS.get(p[0])
+        elif m == "getMultipleAccounts":
+            res = {"value": [{"owner": SYS, "executable": False, "lamports": 1}
+                             if a in USERS else None for a in p[0]]}
         else:
             return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"],
                                              "error": {"code": -32601, "message": "Method not found"}})
