@@ -60,3 +60,23 @@ def test_agent_calls_a_tool_and_answers(box):
     agent = build_agent(model, box, "devnet")
     assert ask(agent, "what does this wallet hold?") == "That wallet holds 1.1 SOL and 75 USDC."
     assert box.graph.holdings(ALICE)["SOL"] == 1.1
+
+
+def test_model_is_picked_from_the_key(monkeypatch):
+    from solgraph.config import Settings
+
+    for k in ("SOLGRAPH_MODEL", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "x")
+    assert Settings.load().model.startswith("gemini")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+    assert Settings.load().model.startswith("claude")
+    monkeypatch.setenv("SOLGRAPH_MODEL", "gemini-2.5-pro")
+    assert Settings.load().model == "gemini-2.5-pro"
+
+
+def test_gemini_model_builds(monkeypatch):
+    from solgraph.agent import default_model
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "x")
+    assert type(default_model("gemini-2.5-flash")).__name__ == "ChatGoogleGenerativeAI"

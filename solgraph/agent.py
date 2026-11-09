@@ -34,6 +34,12 @@ def build_agent(model: BaseChatModel, box: Toolbox, network: str):
 
 
 def default_model(name: str) -> BaseChatModel:
+    """`gemini-*` uses Google's API (free tier, GOOGLE_API_KEY); anything else uses Claude
+    (ANTHROPIC_API_KEY)."""
+    if name.startswith("gemini"):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(model=name, temperature=0, max_retries=3)
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(model=name, max_tokens=2048, temperature=0)

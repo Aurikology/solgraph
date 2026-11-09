@@ -5,7 +5,7 @@ SolGraph is an AI-powered Solana assistant that uses LangChain and Apache AGE to
 **It is read-only.** It holds no private keys, has no tool that signs or sends anything, and defaults to devnet. A test fails if a write tool ever reaches the AI.
 
 ```
-question ─► LangChain agent (Claude) ─► read-only tools ─► Solana RPC     (balances, history)
+question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─► Solana RPC     (balances, history)
                                              │        └──► Jupiter / Agent Kit (token names, prices)
                                              ▼
                                    graph: Apache AGE on Postgres (or in memory)
@@ -20,7 +20,7 @@ question ─► LangChain agent (Claude) ─► read-only tools ─► Solana RP
 | RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 39 offline tests, and the CLI run against live Solana devnet |
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
-| LangChain agent loop | Tested with a scripted fake model; **not yet run against live Claude** |
+| LangChain agent loop | Tested with a scripted fake model; **not yet run against a live model** |
 | Apache AGE backend | Integration test written; **not yet run against a real AGE database** |
 
 ## What it can answer
@@ -46,7 +46,7 @@ You need Python **3.13.0 exactly**. `solana-agent-kit-py` declares `requires-pyt
 uv python install 3.13.0
 uv venv -p 3.13.0 .venv
 uv pip install -p .venv -e ".[dev]"
-cp .env.example .env            # add ANTHROPIC_API_KEY for the chat features
+cp .env.example .env            # add GOOGLE_API_KEY (free) or ANTHROPIC_API_KEY for chat
 ```
 
 On Windows, the first install builds numpy 1.26 from source (the kit pins numpy < 2) and needs the MSVC build tools. It takes a few minutes, once.
