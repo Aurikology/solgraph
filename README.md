@@ -21,7 +21,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
-| Apache AGE backend | Integration test written; **not yet run against a real AGE database** |
+| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (42/42, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
 
