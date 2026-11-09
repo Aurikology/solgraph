@@ -13,14 +13,14 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
                                    (:Wallet)-[:HOLDS]->(:Token)   (:Wallet)-[:SIGNED]->(:Transaction)
 ```
 
-## Status (v0.1, 2026-11-09)
+## Status (v0.2, 2026-11-09)
 
 | Part | Verified how |
 |---|---|
-| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 39 offline tests, and the CLI run against live Solana devnet |
+| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 41 offline tests, and the CLI run against live Solana devnet |
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
-| LangChain agent loop | Tested with a scripted fake model; **not yet run against a live model** |
+| LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Apache AGE backend | Integration test written; **not yet run against a real AGE database** |
 
 ## What it can answer
@@ -40,16 +40,18 @@ Solana transactions don't list transfers. They list instructions, and swaps or p
 
 ## Setup
 
-You need Python **3.13.0 exactly**. `solana-agent-kit-py` declares `requires-python ==3.13.0`. [uv](https://docs.astral.sh/uv/) gets you that version in one step:
+Tested on Python 3.13.0. `solana-agent-kit-py` declares `requires-python ==3.13.0`, so installers may refuse it on other versions. [uv](https://docs.astral.sh/uv/) sets this up in four lines:
 
 ```bash
-uv python install 3.13.0
 uv venv -p 3.13.0 .venv
+uv pip install -p .venv --no-deps solana-agent-kit-py==1.4.0
 uv pip install -p .venv -e ".[dev]"
 cp .env.example .env            # add GOOGLE_API_KEY (free) or ANTHROPIC_API_KEY for chat
 ```
 
-On Windows, the first install builds numpy 1.26 from source (the kit pins numpy < 2) and needs the MSVC build tools. It takes a few minutes, once.
+The kit goes in with `--no-deps` on purpose. Its declared pins (LangChain < 0.4, numpy < 2, docs tooling) would hold everything on LangChain 0.3, and that version's Gemini adapter fails on every Gemini 3 tool call ("missing a thought_signature"). The one kit module SolGraph uses needs only `requests`, `solders` and `construct`, which are listed in `pyproject.toml`.
+
+A free Gemini key: https://aistudio.google.com/apikey. The default model is `gemini-3.5-flash`. On a new free key, `gemini-2.5-*` is retired and `gemini-3.8-flash` timed out, as of 2026-11-09.
 
 ### Try it without an API key
 
@@ -103,12 +105,12 @@ The project depends on `solana-agent-kit-py` 1.4.0 as asked, but as of 2026-11-0
 | `fetch_price` calls `api.jup.ag/price/v2`, which returns HTTP 404 | Uses Jupiter `lite-api.jup.ag/price/v3` |
 | `get_token_data_by_address` calls `tokens.jup.ag`, which no longer resolves | Uses Jupiter `tokens/v2/search` |
 | Its ticker lookup ranks by reported FDV and returned counterfeit USDC and USDT mints | Used only as a fallback after Jupiter's verified list, with a warning |
-| Its pins force Python 3.13.0, LangChain 0.3, numpy < 2, and an anchorpy pytest plugin that needs pytest-asyncio | Accepted; the plugin is disabled in `pyproject.toml` |
+| Its pins force LangChain 0.3, numpy < 2 and Python 3.13.0, and LangChain 0.3 can't do Gemini 3 tool calls | Installed with `--no-deps`; SolGraph runs on LangChain 1.x and declares the three packages the helper imports |
 
 ## Tests
 
 ```bash
-python -m pytest            # 39 tests against a fake RPC and a fake model, no network
+python -m pytest            # 41 tests against a fake RPC and a fake model, no network
 SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache AGE test
 ```
 

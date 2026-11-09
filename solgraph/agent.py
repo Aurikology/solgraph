@@ -1,11 +1,9 @@
-"""The LangChain agent: Claude, the read-only toolbox, and instructions to explain simply."""
+"""The LangChain agent: Gemini or Claude, the read-only toolbox, and instructions to explain simply."""
 
 from __future__ import annotations
 
-import inspect
-
+from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
-from langgraph.prebuilt import create_react_agent
 
 from .tools import Toolbox, build_tools
 
@@ -16,7 +14,9 @@ never ask for a private key or seed phrase. If someone asks you to move money, s
 SolGraph is read-only.
 
 How to answer:
-- Use the tools for every fact about a wallet or token. Never guess balances, prices or history.
+- Use the tools for every fact about a wallet or token. Never guess balances, prices or history,
+  and never describe what another wallet "usually" does unless you loaded its history. If you
+  only saw part of the picture, say so.
 - To explain where tokens came from: call recent_transactions for the wallet, then
   trace_token_origin. If the trace stops early, load the sender's history and trace again.
 - Explain in plain language. Define a term the first time you use it (mint, lamport, token
@@ -28,9 +28,7 @@ How to answer:
 
 def build_agent(model: BaseChatModel, box: Toolbox, network: str):
     prompt = SYSTEM + f"\nYou are connected to Solana {network}."
-    params = inspect.signature(create_react_agent).parameters
-    kw = {"prompt": prompt} if "prompt" in params else {"state_modifier": prompt}
-    return create_react_agent(model, build_tools(box), **kw)
+    return create_agent(model, build_tools(box), system_prompt=prompt)
 
 
 def default_model(name: str) -> BaseChatModel:

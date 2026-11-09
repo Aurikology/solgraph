@@ -42,6 +42,6 @@ class Settings:
             pg_dsn=os.environ.get("SOLGRAPH_PG_DSN"),  # unset = in-memory graph
             graph_name=os.environ.get("SOLGRAPH_GRAPH", "solgraph"),
             model=os.environ.get("SOLGRAPH_MODEL") or (
-                "gemini-2.5-flash" if os.environ.get("GOOGLE_API_KEY")
+                "gemini-3.5-flash" if os.environ.get("GOOGLE_API_KEY")
                 and not os.environ.get("ANTHROPIC_API_KEY") else "claude-sonnet-5-5"),
         )

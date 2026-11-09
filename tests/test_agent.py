@@ -79,4 +79,4 @@ def test_gemini_model_builds(monkeypatch):
     from solgraph.agent import default_model
 
     monkeypatch.setenv("GOOGLE_API_KEY", "x")
-    assert type(default_model("gemini-2.5-flash")).__name__ == "ChatGoogleGenerativeAI"
+    assert type(default_model("gemini-3.5-flash")).__name__ == "ChatGoogleGenerativeAI"
