@@ -13,6 +13,7 @@ from collections import defaultdict
 
 import httpx
 
+from .cache import TTL, Cache, cache_key
 from .models import (
     LAMPORTS_PER_SOL,
     SOL_MINT,
@@ -36,16 +37,32 @@ class RpcError(RuntimeError):
 
 class SolanaRpc:
     def __init__(self, url: str, retries: int = 4, backoff: float = 0.8,
-                 client: httpx.Client | None = None):
+                 client: httpx.Client | None = None, cache: Cache | None = None):
         self.url = url
+        self.cache = cache
+        self.hits = self.misses = 0
         self.retries = retries
         self.backoff = backoff
         self.http = client or httpx.Client(timeout=20)
         self._id = 0
 
     def call(self, method: str, params: list | None = None):
+        params = params or []
+        key = cache_key(self.url, method, params) if self.cache and method in TTL else None
+        if key:
+            hit = self.cache.get(key)
+            if hit is not None:
+                self.hits += 1
+                return hit
+            self.misses += 1
+        result = self._fetch(method, params)
+        if key and result is not None:  # a transaction not found yet may appear later
+            self.cache.set(key, result, TTL[method])
+        return result
+
+    def _fetch(self, method: str, params: list):
         self._id += 1
-        body = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or []}
+        body = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
         last = ""
         for attempt in range(self.retries + 1):
             try:
@@ -97,7 +114,7 @@ class SolanaRpc:
         """Who is behind each address: a person's wallet, a program, or an account a program
         owns (a pool vault, a PDA, a token account). One `getMultipleAccounts` call per 100
         addresses, asking for zero bytes of account data."""
-        addrs = list(dict.fromkeys(addresses))
+        addrs = sorted(set(addresses))  # sorted: the same set always makes the same cache key
         out: dict[str, str] = {}
         for i in range(0, len(addrs), 100):
             chunk = addrs[i:i + 100]

@@ -61,7 +61,9 @@ def graph(address: Address, depth: int = 2):
 @app.get("/health")
 def health():
     a = core()
-    return {"network": a.settings.network, "graph": type(a.graph).__name__, **a.graph.stats()}
+    cache = type(a.rpc.cache).__name__ if a.rpc.cache else None
+    return {"network": a.settings.network, "graph": type(a.graph).__name__, "cache": cache,
+            "cache_hits": a.rpc.hits, "cache_misses": a.rpc.misses, **a.graph.stats()}
 
 
 @app.get("/wallet/{address}/balances")

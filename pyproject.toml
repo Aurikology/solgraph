@@ -24,7 +24,8 @@ dependencies = [
 # whose Gemini adapter cannot do tool calls on Gemini 3 (no thought signatures).
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "redis>=5"]
+redis = ["redis>=5"]
 
 [project.scripts]
 solgraph = "solgraph.__main__:main"

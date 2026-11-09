@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .cache import open_cache
 from .config import Settings
 from .graph import GraphStore, open_graph
 from .market import KitMarket
@@ -23,7 +24,8 @@ class App:
     @classmethod
     def create(cls, settings: Settings | None = None) -> "App":
         s = settings or Settings.load()
-        rpc = SolanaRpc(s.rpc_url)
+        cache = open_cache(s.redis_url) if s.cache else None
+        rpc = SolanaRpc(s.rpc_url, cache=cache)
         graph = open_graph(s.pg_dsn, s.graph_name)
         box = Toolbox(rpc=rpc, graph=graph, market=KitMarket(), monitor=Monitor())
         return cls(s, rpc, graph, box)
