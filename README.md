@@ -19,12 +19,13 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 
 | Part | Verified how |
 |---|---|
-| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 47 offline tests, and the CLI run against live Solana devnet |
+| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 48 offline tests, and the CLI run against live Solana devnet |
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
+| Graph web page | Loaded a live devnet wallet through AGE in headless Chromium at 1366 px and 390 px: 16 addresses, 26 transfers, no console errors, no sideways scroll |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
-| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (48/48, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
+| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (49/49, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
 
@@ -87,6 +88,16 @@ python -m solgraph chat
 uvicorn solgraph.api:app        # then open http://127.0.0.1:8000/docs
 ```
 
+### See the graph
+
+```bash
+uvicorn solgraph.api:app        # then open http://127.0.0.1:8000
+```
+
+Type a wallet and press Load: it pulls the last 15 transactions from Solana and draws every transfer within one to three hops, in rings by distance, coloured by what each address is. Repeated transfers between the same two addresses are merged into one edge (`12× 0.0323638 SOL` is the total). Click an address to open it in the Solana explorer or load its own history.
+
+![SolGraph graph view of a devnet wallet: one user wallet funded it 12 times, and it paid account rent into 14 program-owned accounts](docs/graph-ui.png)
+
 ### Use Apache AGE instead of the in-memory graph
 
 ```bash
@@ -128,7 +139,7 @@ The project depends on `solana-agent-kit-py` 1.4.0 as asked, but as of 2026-11-0
 ## Tests
 
 ```bash
-python -m pytest            # 47 tests against a fake RPC and a fake model, no network
+python -m pytest            # 48 tests against a fake RPC and a fake model, no network
 SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache AGE test
 ```
 
@@ -143,7 +154,6 @@ SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache 
 1. Approval-gated writes on devnet only: transfer previews, a spending limit, and an explicit yes for every transaction.
 2. Redis cache for RPC reads.
 3. pgvector document search over Solana docs, so the guide can cite them.
-4. A small web UI drawing the graph.
 
 ## License
 

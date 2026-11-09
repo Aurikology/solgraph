@@ -36,5 +36,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 packages = ["solgraph"]
 
+[tool.setuptools.package-data]
+solgraph = ["static/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

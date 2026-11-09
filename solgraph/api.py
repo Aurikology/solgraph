@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .agent import ask
 from .app import App
+from .graph import neighborhood
+from .ingest import classify_unknown
 from .models import Address, Mint
 
 app = FastAPI(title="SolGraph", description="Read-only Solana explorer with an AI guide.")
@@ -30,6 +34,28 @@ def _tool(name: str, **kw):
     if isinstance(out, dict) and "error" in out:
         raise HTTPException(502, out["error"])
     return out
+
+
+_PAGE = Path(__file__).with_name("static") / "index.html"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def page():
+    """The graph explorer: type a wallet, load its history, see who it trades with."""
+    return _PAGE.read_text(encoding="utf-8")
+
+
+@app.get("/wallet/{address}/graph")
+def graph(address: Address, depth: int = 2):
+    """Nodes and transfer edges within `depth` hops, from the graph already loaded. Addresses
+    whose kind is not known yet (loaded by an older version, or a failed lookup) are looked up
+    first, so the drawing and the trace agree on what is a pool and what is a person."""
+    a = core()
+    depth = min(max(depth, 1), 3)
+    g = neighborhood(a.graph, address, depth)
+    if any(n["kind"] == "unknown" for n in g["nodes"]) and             classify_unknown(a.rpc, a.graph, [n["id"] for n in g["nodes"]]):
+        g = neighborhood(a.graph, address, depth)  # kinds changed, so the program stop may too
+    return g
 
 
 @app.get("/health")
