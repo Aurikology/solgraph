@@ -15,7 +15,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
                                    (:Wallet)-[:HOLDS]->(:Token)   (:Wallet)-[:SIGNED]->(:Transaction)
 ```
 
-## Status (v1.0, 2026-11-09)
+## Status (v1.1, 2026-11-09)
 
 | Part | Verified how |
 |---|---|
@@ -23,6 +23,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
 | RPC cache | Unit tests for every store, a live Redis round trip, and the cold/warm devnet timing below |
+| Docker stack | `docker compose up -d --build`: all three containers healthy, page and `/ask` checked against live devnet, Redis serving 34 of 38 reads on the second load |
 | Graph web page | Loaded a live devnet wallet through AGE in headless Chromium at 1366 px and 390 px: 16 addresses, 26 transfers, no console errors, no sideways scroll |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
@@ -55,6 +56,15 @@ An address whose balance changed is not always a person. After loading a history
 | `unknown` | No account on chain (closed or never funded), or not looked up yet | |
 
 Origin traces record a transfer out of a `program` or `program_account` but do not walk past it. Everything that ever went into a DEX pool vault is not where your tokens came from, so the trace answers "from a swap" instead of listing strangers.
+
+## Run everything with Docker
+
+```bash
+cp .env.example .env              # optional: add GOOGLE_API_KEY (free) for the AI guide
+docker compose up -d --build      # SolGraph + Postgres 16/Apache AGE + Redis
+```
+
+Open http://127.0.0.1:8000 for the graph page, or http://127.0.0.1:8000/docs for the API. The app runs as a non-root user, waits for both databases to be healthy, and reads only the AI key from `.env`: there is no wallet key to give it. Verified: the stack started from a clean build, the page loaded a live devnet wallet at desktop and phone widths, and `/ask` answered from real data (0.018010866 SOL, matching the page).
 
 ## Setup
 
@@ -102,7 +112,7 @@ Type a wallet and press Load: it pulls the last 15 transactions from Solana and 
 ### Use Apache AGE instead of the in-memory graph
 
 ```bash
-docker compose up -d            # Postgres 16 + AGE 1.6.0 on 127.0.0.1:5455 (not "localhost": see below)
+docker compose up -d age        # Postgres 16 + AGE 1.6.0 on 127.0.0.1:5455 (not "localhost": see below)
 export SOLGRAPH_PG_DSN=postgresql://solgraph:solgraph@127.0.0.1:5455/solgraph
 ```
 
