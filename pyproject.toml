@@ -1,6 +1,6 @@
 [project]
 name = "solgraph"
-version = "0.2.0"
+version = "1.0.0"
 description = "Read-only Solana assistant: LangChain agent over an Apache AGE graph of wallets, tokens and transfers."
 readme = "README.md"
 requires-python = ">=3.11"

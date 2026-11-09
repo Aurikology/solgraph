@@ -1,5 +1,7 @@
 # SolGraph
 
+[![tests](https://github.com/Aurikology/solgraph/actions/workflows/tests.yml/badge.svg)](https://github.com/Aurikology/solgraph/actions/workflows/tests.yml)
+
 SolGraph is an AI-powered Solana assistant that uses LangChain and Apache AGE to understand, explore and explain relationships between wallets, tokens and transactions.
 
 **It is read-only.** It holds no private keys, has no tool that signs or sends anything, and defaults to devnet. A test fails if a write tool ever reaches the AI.
@@ -9,19 +11,20 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
                                              │        └──► Jupiter / Agent Kit (token names, prices)
                                              ▼
                                    graph: Apache AGE on Postgres (or in memory)
-                                   (:Wallet)-[:TRANSFER {mint, amount}]->(:Wallet)
+                                   (:Wallet {kind})-[:TRANSFER {mint, amount}]->(:Wallet)
                                    (:Wallet)-[:HOLDS]->(:Token)   (:Wallet)-[:SIGNED]->(:Transaction)
 ```
 
-## Status (v0.2, 2026-11-09)
+## Status (v1.0, 2026-11-09)
 
 | Part | Verified how |
 |---|---|
-| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 41 offline tests, and the CLI run against live Solana devnet |
+| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 46 offline tests, and the CLI run against live Solana devnet |
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
-| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (42/42, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
+| Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
+| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (47/47, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
 
@@ -37,6 +40,19 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 ### How transfers are worked out
 
 Solana transactions don't list transfers. They list instructions, and swaps or program calls can move tokens through accounts the instructions never name. SolGraph reads each transaction's **balance changes** instead: for every asset, owners whose balance fell are paired with owners whose balance rose, and the fee is added back first so it never shows up as a transfer. This works the same for plain sends, swaps and program-routed transfers. See `solgraph/rpc.py` (`parse_transaction`).
+
+### Wallets vs programs
+
+An address whose balance changed is not always a person. After loading a history, SolGraph asks the chain who owns each new address (one `getMultipleAccounts` call per 100 addresses, zero bytes of data) and stores a `kind` on the node:
+
+| kind | Meaning | How it is decided |
+|---|---|---|
+| `user` | A wallet a keypair controls | Owned by the System Program |
+| `program` | Program code | Executable |
+| `program_account` | State a program controls: pool vaults, PDAs, token accounts | Owned by any other program |
+| `unknown` | No account on chain (closed or never funded), or not looked up yet | |
+
+Origin traces record a transfer out of a `program` or `program_account` but do not walk past it. Everything that ever went into a DEX pool vault is not where your tokens came from, so the trace answers "from a swap" instead of listing strangers.
 
 ## Setup
 
@@ -110,14 +126,14 @@ The project depends on `solana-agent-kit-py` 1.4.0 as asked, but as of 2026-11-0
 ## Tests
 
 ```bash
-python -m pytest            # 41 tests against a fake RPC and a fake model, no network
+python -m pytest            # 46 tests against a fake RPC and a fake model, no network
 SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache AGE test
 ```
 
 ## Known limits
 
-- `Wallet` nodes are any account whose balance changed, including program-owned accounts. Telling users from programs is not done yet.
 - Tracing goes back only as far as histories have been loaded. The agent loads a sender's history when a trace stops early.
+- `kind` comes from the account's current owner. An account that was closed reads as `unknown` and is followed.
 - Free public RPC and Jupiter endpoints rate-limit bursts. Set `SOLGRAPH_RPC_URL` to a private RPC for heavy use.
 
 ## Roadmap
@@ -126,3 +142,7 @@ SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache 
 2. Redis cache for RPC reads.
 3. pgvector document search over Solana docs, so the guide can cite them.
 4. A small web UI drawing the graph.
+
+## License
+
+MIT
