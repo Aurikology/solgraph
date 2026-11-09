@@ -23,7 +23,7 @@ jobs:
           --health-retries 20
     env:
       # the Apache AGE integration test runs against the service above; nothing touches the network
-      SOLGRAPH_TEST_PG_DSN: postgresql://solgraph:solgraph@localhost:5432/solgraph
+      SOLGRAPH_TEST_PG_DSN: postgresql://solgraph:solgraph@127.0.0.1:5432/solgraph
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

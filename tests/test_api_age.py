@@ -45,3 +45,11 @@ def test_age_backend_matches_memory(rpc):
     assert g.stats()["transfers"] >= 3
     assert g.kinds([ALICE, BOB, "Vau1t" + "V" * 39]) == {
         ALICE: "user", BOB: "user", "Vau1t" + "V" * 39: "unknown"}
+
+
+def test_unreachable_database_fails_fast_with_advice():
+    import time
+    t = time.time()
+    with pytest.raises(ConnectionError, match="127.0.0.1 rather than localhost"):
+        AgeGraph("postgresql://x:y@127.0.0.1:1/none", connect_timeout=2)
+    assert time.time() - t < 8
