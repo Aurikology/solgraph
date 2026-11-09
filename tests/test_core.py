@@ -4,7 +4,7 @@ import httpx
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from solgraph.graph import MemoryGraph, _kind, _lit, counterparties, trace_origin
+from solgraph.graph import MemoryGraph, _kind, _lit, counterparties, neighborhood, trace_origin
 from solgraph.ingest import ingest_wallet
 from solgraph.models import Address, SOL_MINT, Transfer, TxRecord
 from solgraph.monitor import diff
@@ -192,3 +192,18 @@ def test_trace_stops_at_program_accounts():
 def test_kind_values_are_whitelisted():
     with pytest.raises(ValueError):
         _kind("user' }) DETACH DELETE n //")
+
+
+def test_neighborhood_hops_and_program_stop(rpc):
+    g = _loaded(rpc)
+    one = neighborhood(g, BOB, depth=1)
+    assert {n["id"] for n in one["nodes"]} == {BOB, ALICE}
+    assert {n["kind"] for n in one["nodes"]} == {"user"} and len(one["edges"]) == 2
+    two = neighborhood(g, BOB, depth=2)
+    assert {n["id"] for n in two["nodes"]} == {BOB, ALICE, FUNDER, MINTER}
+    assert len(two["edges"]) == 4 and not two["truncated"]
+    capped = neighborhood(g, BOB, depth=2, max_nodes=2)
+    assert len(capped["nodes"]) == 2 and capped["truncated"]
+    assert all(e["source"] in {BOB, ALICE} and e["destination"] in {BOB, ALICE} for e in capped["edges"])
+    g.set_kinds({ALICE: "program_account"})  # pretend Alice is a pool vault
+    assert {n["id"] for n in neighborhood(g, BOB, depth=3)["nodes"]} == {BOB, ALICE}

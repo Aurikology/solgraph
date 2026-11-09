@@ -28,6 +28,14 @@ def test_api_routes(client):
     client.post(f"/wallet/{ALICE}/ingest")
     assert len(client.get(f"/wallet/{BOB}/origin/SOL").json()["transfers"]) == 2
     assert client.get("/wallet/nope/balances").status_code == 422
+    g = client.get(f"/wallet/{BOB}/graph?depth=2").json()
+    assert g["center"] == BOB and len(g["edges"]) == 4
+    assert client.get(f"/wallet/{BOB}/graph?depth=99").status_code == 200  # clamped, not an error
+    api._state["app"].graph._kinds.clear()  # as if loaded by a version before kinds existed
+    g = client.get(f"/wallet/{BOB}/graph?depth=2").json()
+    assert {n["kind"] for n in g["nodes"]} == {"user"}
+    page = client.get("/")
+    assert page.status_code == 200 and "cytoscape" in page.text and "/graph?depth=" in page.text
 
 
 DSN = os.environ.get("SOLGRAPH_TEST_PG_DSN")

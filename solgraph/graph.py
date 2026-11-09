@@ -90,6 +90,36 @@ def counterparties(g: GraphStore, address: str) -> list[dict]:
     return sorted(agg.values(), key=lambda r: -r["transfers"])
 
 
+def neighborhood(g: GraphStore, address: str, depth: int = 2, max_nodes: int = 120) -> dict:
+    """Everything within `depth` transfer hops of a wallet, in either direction, as plain
+    nodes and edges for drawing. Like `trace_origin`, it does not expand past programs or
+    program-owned accounts: one pool vault would otherwise pull in thousands of strangers."""
+    nodes = {address: 0}
+    edges: dict[tuple[str, str, str, str], Edge] = {}
+    queue = deque([address])
+    while queue:
+        node = queue.popleft()
+        d = nodes[node]
+        if d >= depth:
+            continue
+        if node != address and g.kinds([node]).get(node) in PROGRAM_KINDS:
+            continue
+        for e in g.incoming(node) + g.outgoing(node):
+            edges[(e.signature, e.source, e.destination, e.mint)] = e
+            for other in (e.source, e.destination):
+                if other not in nodes and len(nodes) < max_nodes:
+                    nodes[other] = d + 1
+                    queue.append(other)
+    edges = {k: e for k, e in edges.items() if e.source in nodes and e.destination in nodes}
+    kinds = g.kinds(nodes)
+    return {
+        "center": address,
+        "truncated": len(nodes) >= max_nodes,
+        "nodes": [{"id": a, "kind": kinds[a], "hops": h} for a, h in nodes.items()],
+        "edges": [vars(e) for e in edges.values()],
+    }
+
+
 # --- in-memory backend -------------------------------------------------------------------------
 
 class MemoryGraph:

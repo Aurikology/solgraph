@@ -36,10 +36,18 @@ def ingest_wallet(rpc: SolanaRpc, graph: GraphStore, address: str, limit: int = 
         rep.transfers += len(tx.transfers)
         seen.update(tx.signers)
         seen.update(a for t in tx.transfers for a in (t.source, t.destination))
-    new = [a for a, k in graph.kinds(seen).items() if k == "unknown"]
-    if new:
-        try:
-            graph.set_kinds(rpc.account_kinds(new))
-        except RpcError:
-            rep.kinds_known = False  # the history is still loaded; kinds fill in next time
+    rep.kinds_known = classify_unknown(rpc, graph, seen)
     return rep
+
+
+def classify_unknown(rpc: SolanaRpc, graph: GraphStore, addresses) -> bool:
+    """Look up the kind of every address the graph does not know yet, in one batched read.
+    Returns False if the lookup failed; the graph is unchanged and kinds fill in next time."""
+    new = [a for a, k in graph.kinds(set(addresses)).items() if k == "unknown"]
+    if not new:
+        return True
+    try:
+        graph.set_kinds(rpc.account_kinds(new))
+    except RpcError:
+        return False
+    return True
