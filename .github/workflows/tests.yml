@@ -21,7 +21,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
+      SOLGRAPH_TEST_REDIS_URL: redis://127.0.0.1:6379/0
       # the Apache AGE integration test runs against the service above; nothing touches the network
       SOLGRAPH_TEST_PG_DSN: postgresql://solgraph:solgraph@127.0.0.1:5432/solgraph
     steps:

@@ -19,13 +19,14 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 
 | Part | Verified how |
 |---|---|
-| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 48 offline tests, and the CLI run against live Solana devnet |
+| RPC reads, transfer parsing, in-memory graph, tracing, monitoring, CLI | 54 offline tests, and the CLI run against live Solana devnet |
 | Token lookup and prices | Tests, and live lookups of USDC, JUP and BONK against Jupiter |
 | FastAPI routes | In-process tests (`TestClient`) |
+| RPC cache | Unit tests for every store, a live Redis round trip, and the cold/warm devnet timing below |
 | Graph web page | Loaded a live devnet wallet through AGE in headless Chromium at 1366 px and 390 px: 16 addresses, 26 transfers, no console errors, no sideways scroll |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
-| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (49/49, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
+| Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (56/56 with AGE and Redis, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
 
@@ -136,11 +137,25 @@ The project depends on `solana-agent-kit-py` 1.4.0 as asked, but as of 2026-11-0
 | Its ticker lookup ranks by reported FDV and returned counterfeit USDC and USDT mints | Used only as a fallback after Jupiter's verified list, with a warning |
 | Its pins force LangChain 0.3, numpy < 2 and Python 3.13.0, and LangChain 0.3 can't do Gemini 3 tool calls | Installed with `--no-deps`; SolGraph runs on LangChain 1.x and declares the three packages the helper imports |
 
+## RPC cache
+
+Every RPC read goes through a cache keyed by endpoint, method and parameters. How long an answer is kept depends on whether it can change:
+
+| Read | Kept | Why |
+|---|---|---|
+| `getTransaction` | For good | A finalized transaction never changes |
+| `getMultipleAccounts` (account kinds) | 1 hour | Owners almost never change |
+| Balances, signature lists | 15 seconds | They change with every transaction; 15 s absorbs the burst one question causes |
+
+The store is a SQLite file in `~/.solgraph/` by default. Set `SOLGRAPH_REDIS_URL` to use Redis instead (`docker compose up -d redis`, then `redis://127.0.0.1:6380/0`; `pip install "solgraph[redis]"`). `SOLGRAPH_CACHE=off` turns it off. `/health` reports hits and misses.
+
+Measured on live devnet, loading the same 20-transaction history twice: **34.8 s cold, 2.7 s warm** with SQLite, and 33.0 s cold, 3.3 s warm with Redis. Most of the warm time is Python start-up.
+
 ## Tests
 
 ```bash
-python -m pytest            # 48 tests against a fake RPC and a fake model, no network
-SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache AGE test
+python -m pytest            # 54 tests against a fake RPC and a fake model, no network
+SOLGRAPH_TEST_PG_DSN=postgresql://... SOLGRAPH_TEST_REDIS_URL=redis://... python -m pytest   # also the AGE and Redis tests
 ```
 
 ## Known limits
@@ -152,8 +167,7 @@ SOLGRAPH_TEST_PG_DSN=postgresql://... python -m pytest   # also runs the Apache 
 ## Roadmap
 
 1. Approval-gated writes on devnet only: transfer previews, a spending limit, and an explicit yes for every transaction.
-2. Redis cache for RPC reads.
-3. pgvector document search over Solana docs, so the guide can cite them.
+2. pgvector document search over Solana docs, so the guide can cite them.
 
 ## License
 

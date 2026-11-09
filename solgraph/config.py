@@ -29,6 +29,8 @@ class Settings:
     pg_dsn: str | None
     graph_name: str
     model: str
+    redis_url: str | None = None
+    cache: bool = True
 
     @classmethod
     def load(cls) -> "Settings":
@@ -41,6 +43,8 @@ class Settings:
             rpc_url=os.environ.get("SOLGRAPH_RPC_URL", NETWORKS[network]),
             pg_dsn=os.environ.get("SOLGRAPH_PG_DSN"),  # unset = in-memory graph
             graph_name=os.environ.get("SOLGRAPH_GRAPH", "solgraph"),
+            redis_url=os.environ.get("SOLGRAPH_REDIS_URL"),  # unset = SQLite file cache
+            cache=os.environ.get("SOLGRAPH_CACHE", "on").lower() not in ("off", "0", "false"),
             model=os.environ.get("SOLGRAPH_MODEL") or (
                 "gemini-3.5-flash" if os.environ.get("GOOGLE_API_KEY")
                 and not os.environ.get("ANTHROPIC_API_KEY") else "claude-sonnet-5-5"),
