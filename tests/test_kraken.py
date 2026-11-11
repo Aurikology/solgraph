@@ -35,6 +35,7 @@ LEDGER = [
     L("E1", "earn", "SOL.F", "0.05", subtype="reward"),
     L("X1", "transfer", "SOL.S", "4", subtype="stakingfromspot"),  # moving, not earning
     L("C1", "deposit", "ZCAD", "5000"),
+    L("R1", "reward", "XXBT", "0.0007", subtype="invitebonus"),  # referral bonus
 ]
 BALANCE = {"SOL": "8.0", "SOL03.S": "4.25", "SOL.F": "0.05", "ZCAD": "100.5", "XXBT": "0.002",
            "DOT": "0.0000"}
@@ -137,6 +138,7 @@ def test_ledger_summary():
     assert s.sold == 3 and s.proceeds["CAD"] == 898
     assert s.deposited == 2 and s.withdrawn == pytest.approx(1.01)
     assert s.rewards == pytest.approx(0.30)  # staking + earn rewards, not the transfer
+    assert summarise_ledger(LEDGER)["BTC"].bonuses == pytest.approx(0.0007)
 
 
 def test_portfolio_summary():
@@ -149,6 +151,9 @@ def test_portfolio_summary():
     assert sol["average_buy_price"] == {"CAD": round(3205 / 15, 4)}
     assert sol["change_since_average_buy_pct"] == round((250 / (3205 / 15) - 1) * 100, 1)
     assert sol["staking_rewards_earned"] == pytest.approx(0.3)
+    btc = next(a for a in out["assets"] if a["asset"] == "BTC")
+    assert btc["bonuses_received"] == 0.0007 and "average_buy_price" not in btc
+    assert "fees_paid" in sol
     assert "DOT" not in {a["asset"] for a in out["assets"]}  # zero balances are left out
     assert out["total_value_cad"] == round(3075.0 + 100.5 + 0.002 * 140000, 2)
     assert out["history_complete"] is True and out["ledger_entries_read"] == len(LEDGER)

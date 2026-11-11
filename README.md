@@ -32,7 +32,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
 | Docs search (RAG) | 78 tests pass with AGE, pgvector and Redis running (store, chunker, embedder pacing, tool, `/kb/search`); full docs indexed in pgvector; retrieval measured on 35 labelled questions (below); agent answered a live question citing the docs; Docker stack healthy with the app reading the pgvector index (`/health`: `PgVectorStore`) |
-| Kraken portfolio | 21 tests against a fake Kraken, including Kraken's own published signing example, the read-only guard, pagination, rate limits and the buy-price maths. **Not yet run against a real account** |
+| Kraken portfolio | 21 tests against a fake Kraken, including Kraken's own published signing example, the read-only guard, pagination, rate limits and the buy-price maths. **Live on a real account** with a read-only key: all 13 ledger entries read, and every asset's buys, sales, staking rewards and referral bonuses add up to the balance Kraken reports, to the last unit |
 | Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (56/56 with AGE and Redis, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer

@@ -143,6 +143,7 @@ class _Stats:
     sold: float = 0.0
     proceeds: dict = field(default_factory=lambda: defaultdict(float))
     rewards: float = 0.0
+    bonuses: float = 0.0   # referral and promo rewards, free coins
     deposited: float = 0.0
     withdrawn: float = 0.0
     fees: dict = field(default_factory=lambda: defaultdict(float))       # by cash currency
@@ -164,6 +165,8 @@ def summarise_ledger(entries: list[dict]) -> dict[str, _Stats]:
         elif (typ in ("staking", "reward") and amt > 0 and sub in ("", "reward")) or \
                 (typ == "earn" and sub == "reward"):
             stats[asset].rewards += amt - fee
+        elif typ == "reward" and amt > 0:  # e.g. subtype 'invitebonus' for a referral
+            stats[asset].bonuses += amt - fee
     for legs in groups.values():
         crypto = [l for l in legs if l["_asset"] not in CASH]
         cash = [l for l in legs if l["_asset"] in CASH]
@@ -231,7 +234,7 @@ class Portfolio:
             if _d(amt):
                 held[name][where] = held[name].get(where, 0.0) + _d(amt)
         stats = summarise_ledger(entries)
-        names = sorted(set(held) | {a for a, s in stats.items() if s.bought or s.rewards})
+        names = sorted(set(held) | {a for a, s in stats.items() if s.bought or s.rewards or s.bonuses})
         if asset:
             names = [n for n in names if n == asset.upper()]
         rows, total = [], 0.0
@@ -249,7 +252,8 @@ class Portfolio:
                 avg = {c: round(s.cost[c] / q, 4) for c, q in s.bought_by.items() if q}
                 row["bought_on_kraken"] = round(s.bought, 8)
                 row["average_buy_price"] = avg
-                row["fees_paid"] = {c: round(v, 2) for c, v in s.fees.items() if v}
+                if any(s.fees.values()):  # Buy Crypto builds its fee into the price
+                    row["fees_paid"] = {c: round(v, 2) for c, v in s.fees.items() if v}
                 if price is not None and cur in avg and avg[cur]:
                     row["change_since_average_buy_pct"] = round((price / avg[cur] - 1) * 100, 1)
             if s.sold:
@@ -257,6 +261,8 @@ class Portfolio:
                 row["sale_proceeds"] = {c: round(v, 2) for c, v in s.proceeds.items()}
             if s.rewards:
                 row["staking_rewards_earned"] = round(s.rewards, 8)
+            if s.bonuses:
+                row["bonuses_received"] = round(s.bonuses, 8)
             if s.deposited:
                 row["deposited_from_outside"] = round(s.deposited, 8)
             if s.withdrawn:
