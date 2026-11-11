@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/Aurikology/solgraph/actions/workflows/tests.yml/badge.svg)](https://github.com/Aurikology/solgraph/actions/workflows/tests.yml)
 
-SolGraph is an AI-powered Solana assistant that uses LangChain and Apache AGE to understand, explore and explain relationships between wallets, tokens and transactions.
+SolGraph is an AI-powered Solana assistant that uses LangChain and Apache AGE to understand, explore and explain relationships between wallets, tokens and transactions. For questions about how Solana itself works, it searches the official docs (RAG over pgvector) and cites the page.
 
 **It is read-only.** It holds no private keys, has no tool that signs or sends anything, and defaults to devnet. A test fails if a write tool ever reaches the AI.
 
@@ -13,9 +13,13 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
                                    graph: Apache AGE on Postgres (or in memory)
                                    (:Wallet {kind})-[:TRANSFER {mint, amount}]->(:Wallet)
                                    (:Wallet)-[:HOLDS]->(:Token)   (:Wallet)-[:SIGNED]->(:Transaction)
+
+"how do fees work?" ─► search_solana_docs ─► embed query (Gemini) ─► pgvector HNSW (cosine) ─┐
+                                                └─► Postgres full-text (tsvector, GIN) ──────┴─► RRF ─► top passages + URLs
+                         one Postgres holds both: the AGE graph and the pgvector docs index
 ```
 
-## Status (v1.1, 2026-11-09)
+## Status (v1.2, 2026-11-11)
 
 | Part | Verified how |
 |---|---|
@@ -27,6 +31,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | Graph web page | Loaded a live devnet wallet through AGE in headless Chromium at 1366 px and 390 px: 16 addresses, 26 transfers, no console errors, no sideways scroll |
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
+| Docs search (RAG) | 78 tests pass with AGE, pgvector and Redis running (store, chunker, embedder pacing, tool, `/kb/search`); full docs indexed in pgvector; retrieval measured on 35 labelled questions (below); agent answered a live question citing the docs; Docker stack healthy with the app reading the pgvector index (`/health`: `PgVectorStore`) |
 | Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (56/56 with AGE and Redis, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
@@ -39,6 +44,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | "Where did these tokens come from?" | `trace_token_origin` | Graph, walked backwards hop by hop |
 | "What's this token worth?" | `token_info` | Jupiter verified list and price API; Solana Agent Kit lookup as a fallback |
 | "What changed since I last looked?" | `check_wallet_changes` | Balance snapshots in `~/.solgraph/` |
+| "What is rent? How do PDAs work? What does `getSignaturesForAddress` return?" | `search_solana_docs` | The official Solana docs, indexed with pgvector; answers cite the page |
 
 ### How transfers are worked out
 
@@ -112,7 +118,7 @@ Type a wallet and press Load: it pulls the last 15 transactions from Solana and 
 ### Use Apache AGE instead of the in-memory graph
 
 ```bash
-docker compose up -d age        # Postgres 16 + AGE 1.6.0 on 127.0.0.1:5455 (not "localhost": see below)
+docker compose up -d age        # Postgres 16 + AGE 1.6.0 + pgvector on 127.0.0.1:5455 (not "localhost": see below)
 export SOLGRAPH_PG_DSN=postgresql://solgraph:solgraph@127.0.0.1:5455/solgraph
 ```
 
@@ -147,6 +153,41 @@ The project depends on `solana-agent-kit-py` 1.4.0 as asked, but as of 2026-11-0
 | Its ticker lookup ranks by reported FDV and returned counterfeit USDC and USDT mints | Used only as a fallback after Jupiter's verified list, with a warning |
 | Its pins force LangChain 0.3, numpy < 2 and Python 3.13.0, and LangChain 0.3 can't do Gemini 3 tool calls | Installed with `--no-deps`; SolGraph runs on LangChain 1.x and declares the three packages the helper imports |
 
+## Docs search (RAG)
+
+`search_solana_docs` answers "how does Solana work" questions from the official docs instead of the model's memory, and the guide cites the page it used.
+
+```bash
+python -m solgraph docs ingest              # fetch, clean, chunk, embed, index (re-runs embed only what changed)
+python -m solgraph docs search "why does an account need a minimum balance" --mode hybrid
+python -m solgraph docs eval                # hit@1, recall@5 and MRR on 35 labelled questions, per mode
+curl "http://127.0.0.1:8000/kb/search?q=priority+fees&mode=hybrid"
+```
+
+How it works (`solgraph/rag.py`):
+
+- **Corpus.** The `intro`, `core`, `tokens` and `rpc/http` sections of [solana-foundation/solana-com](https://github.com/solana-foundation/solana-com), fetched at a pinned commit: 149 pages, 1,223 chunks. The docs are GPL-3.0, so they are fetched at ingest time and never committed here.
+- **Cleaning and chunking.** MDX front matter, JSX components and client code samples are stripped. Pages are split at `##`/`###` headings, long sections again at paragraph breaks with one paragraph of overlap, and each chunk is embedded with its "Page > Section" title.
+- **Embeddings.** `gemini-embedding-2` (with a free key, documents and queries embedded with their own task types, cut to 768 dimensions) or `bge-base-en-v1.5` run locally through ONNX (`pip install "solgraph[local]"`, no key). Pick with `SOLGRAPH_EMBED_MODEL`. Both fit one `vector(768)` column, and each row records its model, so the two indexes live side by side.
+- **Store.** pgvector in the same Postgres as the Apache AGE graph (`db/Dockerfile` adds pgvector 0.8 to the AGE image). An HNSW index serves cosine search, a generated, weighted `tsvector` column with a GIN index serves full-text search. Without Postgres the index is a JSON file in `~/.solgraph/` with brute-force cosine and BM25.
+- **Hybrid retrieval.** The top 40 by vector and the top 40 by full text are fused with Reciprocal Rank Fusion (k = 60) in one SQL statement. Embeddings catch paraphrases; full text catches exact names such as `getSignaturesForAddress`.
+- **Incremental ingest.** A chunk's id hashes its model, page, heading and text, so a re-run embeds only new or changed chunks and deletes the stale ones.
+- **Free-tier pacing.** Gemini's free tier counts every text as a request: 100 a minute and 1,000 a day per model. The embedder paces itself to 90 a minute (`SOLGRAPH_EMBED_PER_MINUTE`) and honours the API's retry delay.
+
+### Measured retrieval quality
+
+`evals/docs_retrieval.json` holds 35 questions written the way a beginner would ask them, each labelled with the pages that answer it (written before any results were seen). Against the full index (1,217 chunks, `bge-base-en-v1.5`, pgvector, top 5, one chunk per page):
+
+| Mode | hit@1 | recall@5 | MRR |
+|---|---|---|---|
+| Hybrid (vector + full text, RRF) | **0.514** | 0.857 | 0.640 |
+| Vector only (HNSW, cosine) | 0.486 | **0.914** | **0.651** |
+| Keyword only (Postgres full text) | 0.143 | 0.629 | 0.320 |
+
+Keeping one chunk per page raised recall@5 from 0.800 to 0.857 (hybrid) and from 0.829 to 0.914 (vector). Plain-language questions favour the embeddings: keyword search alone misses paraphrases, and on this set fusing it in helps the top hit but costs some recall. Hybrid stays the default because exact identifiers (`getSignaturesForAddress`) are where full text wins, and this set has few of them. The Gemini index has 900 of 1,223 chunks so far: the free tier's 1,000 embeddings a day ran out mid-ingest, and `docs ingest` will finish it after the reset, embedding only the rest.
+
+Live: asked "why does a new account need a minimum SOL balance, and how is that amount worked out?", the agent (Gemini 3.5 Flash) called `search_solana_docs` and answered citing Account Structure, Modification Rules and Create a Token Account.
+
 ## RPC cache
 
 Every RPC read goes through a cache keyed by endpoint, method and parameters. How long an answer is kept depends on whether it can change:
@@ -164,8 +205,8 @@ Measured on live devnet, loading the same 20-transaction history twice: **34.8 s
 ## Tests
 
 ```bash
-python -m pytest            # 54 tests against a fake RPC and a fake model, no network
-SOLGRAPH_TEST_PG_DSN=postgresql://... SOLGRAPH_TEST_REDIS_URL=redis://... python -m pytest   # also the AGE and Redis tests
+python -m pytest            # against a fake RPC, a fake model and a hashing embedder, no network
+SOLGRAPH_TEST_PG_DSN=postgresql://... SOLGRAPH_TEST_REDIS_URL=redis://... python -m pytest   # also AGE, pgvector and Redis: 78 tests
 ```
 
 ## Known limits
@@ -177,7 +218,7 @@ SOLGRAPH_TEST_PG_DSN=postgresql://... SOLGRAPH_TEST_REDIS_URL=redis://... python
 ## Roadmap
 
 1. Approval-gated writes on devnet only: transfer previews, a spending limit, and an explicit yes for every transaction.
-2. pgvector document search over Solana docs, so the guide can cite them.
+2. A reranking pass over the fused docs results, measured against the same eval set.
 
 ## License
 

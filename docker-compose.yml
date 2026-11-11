@@ -20,9 +20,10 @@ services:
       redis:
         condition: service_healthy
 
-  # PostgreSQL 16 with Apache AGE, for the graph
+  # PostgreSQL 16 with Apache AGE (the graph) and pgvector (the docs index), see db/Dockerfile
   age:
-    image: apache/age:release_PG16_1.6.0
+    build: ./db
+    image: solgraph-db:pg16-age1.6.0-pgvector
     environment:
       POSTGRES_USER: solgraph
       POSTGRES_PASSWORD: solgraph  # local development only
