@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -62,8 +63,22 @@ def graph(address: Address, depth: int = 2):
 def health():
     a = core()
     cache = type(a.rpc.cache).__name__ if a.rpc.cache else None
+    docs = a.box.docs
     return {"network": a.settings.network, "graph": type(a.graph).__name__, "cache": cache,
-            "cache_hits": a.rpc.hits, "cache_misses": a.rpc.misses, **a.graph.stats()}
+            "cache_hits": a.rpc.hits, "cache_misses": a.rpc.misses, **a.graph.stats(),
+            "docs_store": type(docs.store).__name__ if docs else None,
+            "docs_chunks": docs.count() if docs else 0}
+
+
+@app.get("/kb/search")
+def kb_search(q: str = Query(min_length=3, max_length=300),
+              mode: Literal["hybrid", "vector", "keyword"] = "hybrid", k: int = 5):
+    """Search the Solana docs index directly: hybrid (default), vector-only or keyword-only."""
+    docs = core().box.docs
+    if docs is None:
+        raise HTTPException(503, core().box.docs_error or "Docs index not configured")
+    hits = docs.search(q, min(max(k, 1), 10), mode)
+    return {"query": q, "mode": mode, "results": [vars(h) for h in hits]}
 
 
 @app.get("/wallet/{address}/balances")

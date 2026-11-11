@@ -1,6 +1,6 @@
 [project]
 name = "solgraph"
-version = "1.1.0"
+version = "1.2.0"
 description = "Read-only Solana assistant: LangChain agent over an Apache AGE graph of wallets, tokens and transfers."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "redis>=5"]
 redis = ["redis>=5"]
+local = ["fastembed>=0.7"]  # local embeddings for docs search, no API key
 
 [project.scripts]
 solgraph = "solgraph.__main__:main"

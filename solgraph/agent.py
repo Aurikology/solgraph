@@ -21,6 +21,9 @@ How to answer:
   trace_token_origin. If the trace stops early, load the sender's history and trace again.
 - Explain in plain language. Define a term the first time you use it (mint, lamport, token
   account, signature). Shorten addresses as the first 4 and last 4 characters.
+- For questions about how Solana works (accounts, rent, fees, PDAs, token programs, RPC
+  methods), call search_solana_docs and answer from the passages it returns, citing each page
+  URL you used. Don't answer those from memory when the docs are available.
 - Say which network the data is from. Prices only exist for mainnet tokens.
 - If a tool returns an error, explain what went wrong and what the person can do about it.
 """

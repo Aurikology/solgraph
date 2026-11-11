@@ -20,11 +20,13 @@ from .graph import GraphStore, counterparties, trace_origin
 from .ingest import ingest_wallet
 from .models import Address, Mint
 from .monitor import Monitor
+from .rag import DocsIndex
 from .rpc import RpcError, SolanaRpc
 
 ALLOWED = frozenset({
     "wallet_balances", "recent_transactions", "wallet_counterparties",
     "trace_token_origin", "token_info", "check_wallet_changes", "graph_stats",
+    "search_solana_docs",
 })
 
 
@@ -47,6 +49,11 @@ class TraceIn(WalletIn):
     depth: int = Field(3, ge=1, le=5, description="How many hops back to follow")
 
 
+class DocsIn(BaseModel):
+    query: str = Field(min_length=3, max_length=300,
+                       description="A question or topic, e.g. 'how are transaction fees calculated'")
+
+
 class TokenIn(BaseModel):
     query: str = Field(min_length=1, max_length=64,
                        description="A token mint address or a ticker such as 'SOL' or 'USDC'")
@@ -60,6 +67,8 @@ class Toolbox:
     graph: GraphStore
     market: Market | None = None
     monitor: Monitor | None = None
+    docs: DocsIndex | None = None
+    docs_error: str | None = None  # why there is no docs index, told to the model as is
 
     def wallet_balances(self, address: str) -> str:
         bal = self.rpc.balances(address)
@@ -119,6 +128,20 @@ class Toolbox:
     def graph_stats(self) -> str:
         return json.dumps(self.graph.stats())
 
+    def search_solana_docs(self, query: str) -> str:
+        if self.docs is None:
+            return json.dumps({"error": self.docs_error or "The docs index is not configured."})
+        if self.docs.count() == 0:
+            return json.dumps({"error": "The docs index is empty. Run "
+                                        "`python -m solgraph docs ingest` once to build it."})
+        hits = self.docs.search(query, k=4)
+        return json.dumps({
+            "results": [{"title": h.title, "section": h.section, "url": h.url,
+                         "text": h.text[:1500]} for h in hits],
+            "note": "From the official Solana docs. Answer from these passages and cite the url "
+                    "of each page you use. If none of them answers the question, say so.",
+        })
+
 
 def _safe(fn):
     """Errors come back to the model as text it can explain, not as a crash."""
@@ -157,6 +180,10 @@ def build_tools(box: Toolbox) -> list[StructuredTool]:
         ("check_wallet_changes", WalletIn,
          "Compare a wallet's balances with the last time it was checked and report what changed."),
         ("graph_stats", _NoArgs, "How many wallets, tokens, transactions and transfers the graph holds."),
+        ("search_solana_docs", DocsIn,
+         "Search the official Solana documentation (core concepts, tokens, RPC methods) and "
+         "return the most relevant passages with their page URLs, for questions about how "
+         "Solana works rather than about a specific wallet."),
     ]
     tools = [StructuredTool.from_function(func=_safe(getattr(box, name)), name=name,
                                           description=desc, args_schema=schema,
