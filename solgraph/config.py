@@ -33,6 +33,7 @@ class Settings:
     cache: bool = True
     embed_model: str = "gemini-embedding-2"
     embed_per_minute: int = 90  # texts a minute; 0 = no pacing (paid tier)
+    kraken_quote: str = "CAD"   # currency for Kraken portfolio values
 
     @classmethod
     def load(cls) -> "Settings":
@@ -51,6 +52,7 @@ class Settings:
                 "gemini-embedding-2" if os.environ.get("GOOGLE_API_KEY", "").strip()
                 else "bge-base-en-v1.5"),
             embed_per_minute=int(os.environ.get("SOLGRAPH_EMBED_PER_MINUTE", "90")),
+            kraken_quote=os.environ.get("SOLGRAPH_KRAKEN_QUOTE", "CAD").upper(),
             model=os.environ.get("SOLGRAPH_MODEL") or (
                 "gemini-3.5-flash" if os.environ.get("GOOGLE_API_KEY")
                 and not os.environ.get("ANTHROPIC_API_KEY") else "claude-sonnet-5-5"),

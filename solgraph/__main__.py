@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("mint")
     o.add_argument("--depth", type=int, default=3)
     sub.add_parser("token").add_argument("query")
+    sub.add_parser("kraken", help="your Kraken account, read-only").add_argument(
+        "--asset", help="only this asset, e.g. SOL")
     sub.add_parser("ask").add_argument("question")
     sub.add_parser("chat")
     d = sub.add_parser("docs").add_subparsers(dest="docs_cmd", required=True)
@@ -126,6 +128,8 @@ def _run(a) -> int:
         _print(box.check_wallet_changes(a.address))
     elif a.cmd == "token":
         _print(box.token_info(a.query))
+    elif a.cmd == "kraken":
+        _print(box.my_kraken_portfolio(a.asset))
     else:
         from .agent import ask
 

@@ -19,7 +19,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
                          one Postgres holds both: the AGE graph and the pgvector docs index
 ```
 
-## Status (v1.2, 2026-11-11)
+## Status (v1.3, 2026-11-11)
 
 | Part | Verified how |
 |---|---|
@@ -32,6 +32,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | LangChain agent | **Live on Gemini 3.5 Flash against devnet:** it answered "what does this wallet hold and where did its SOL come from" from real tool calls, and refused a request to send SOL (and warned that the pasted key was compromised) |
 | Wallets vs programs | Live on devnet through AGE: 10 transactions gave 3 user wallets and 8 program-owned accounts, and the classifications were spot-checked against `getAccountInfo` |
 | Docs search (RAG) | 78 tests pass with AGE, pgvector and Redis running (store, chunker, embedder pacing, tool, `/kb/search`); full docs indexed in pgvector; retrieval measured on 35 labelled questions (below); agent answered a live question citing the docs; Docker stack healthy with the app reading the pgvector index (`/health`: `PgVectorStore`) |
+| Kraken portfolio | 21 tests against a fake Kraken, including Kraken's own published signing example, the read-only guard, pagination, rate limits and the buy-price maths. **Not yet run against a real account** |
 | Apache AGE backend | **Verified on Postgres 16 + AGE 1.6.0 (Docker):** the AGE integration test passes (56/56 with AGE and Redis, none skipped), and a live devnet `origin` trace wrote its transfers into the `solgraph` graph, read back with Cypher |
 
 ## What it can answer
@@ -45,6 +46,7 @@ question ─► LangChain agent (Gemini or Claude) ─► read-only tools ─►
 | "What's this token worth?" | `token_info` | Jupiter verified list and price API; Solana Agent Kit lookup as a fallback |
 | "What changed since I last looked?" | `check_wallet_changes` | Balance snapshots in `~/.solgraph/` |
 | "What is rent? How do PDAs work? What does `getSignaturesForAddress` return?" | `search_solana_docs` | The official Solana docs, indexed with pgvector; answers cite the page |
+| "How is my SOL doing?" | `my_kraken_portfolio` | Your own Kraken account through a read-only API key (optional) |
 
 ### How transfers are worked out
 
@@ -139,6 +141,7 @@ $$) AS (src agtype, dst agtype, amount agtype);
 - **Closed tool list.** `tools.ALLOWED` is the whole list. `tests/test_agent.py` fails if any tool name looks like a write action.
 - **Only read RPC methods.** A test checks that `rpc.py` calls only `getBalance`, `getTokenAccountsByOwner`, `getSignaturesForAddress` and `getTransaction`.
 - **Validated input.** Every address goes through a base58 check (Pydantic) before it reaches the network. Values are checked again before going into a Cypher query, so a crafted string can't break out of it.
+- **Kraken is read-only twice over.** The key you create only gets "Query Funds" and "Query Ledger Entries", and `kraken.py` refuses every private method except `Balance` and `Ledgers` before anything is sent (tested). The key and secret are read from the environment, never stored in settings or printed.
 - **Copycat tokens.** Tickers aren't unique on Solana. Jupiter's verified list is checked first, and anything unverified comes with a warning.
 
 ## About Solana Agent Kit
@@ -188,6 +191,23 @@ Keeping one chunk per page raised recall@5 from 0.800 to 0.857 (hybrid) and from
 
 Live: asked "why does a new account need a minimum SOL balance, and how is that amount worked out?", the agent (Gemini 3.5 Flash) called `search_solana_docs` and answered citing Account Structure, Modification Rules and Create a Token Account.
 
+## Your Kraken account (optional)
+
+Coins on an exchange are held in the exchange's books, not in an on-chain wallet under your name, so the blockchain tools can't see them. `my_kraken_portfolio` reads them from Kraken's API instead: what you hold (spot, staked, Earn), its value now, your average buy price, staking rewards, and deposits and withdrawals. The API is free; Kraken only charges for trades, and this key can't trade.
+
+1. On Kraken: **Settings → API → Create API key**. Tick only **Query Funds** and **Query Ledger Entries**. Leave every trade, deposit, withdraw and Earn box unticked.
+2. Add both values to `.env`:
+   ```
+   KRAKEN_API_KEY=...
+   KRAKEN_API_SECRET=...
+   SOLGRAPH_KRAKEN_QUOTE=CAD     # currency for values; USD is the fallback
+   ```
+3. `python -m solgraph kraken --asset SOL`, or ask the agent "how is my SOL doing?"
+
+How the numbers are worked out (`solgraph/kraken.py`): ledger entries are paged in 50 at a time (up to 1,000, paced under Kraken's rate limit). Buys and sells are the trade and Buy Crypto entries that share a reference id, one crypto leg and one cash leg, with fees added to the cost. Crypto-to-crypto swaps and coins deposited from elsewhere have no cash price, so they don't move the average. It's an estimate for your own interest, not an adjusted cost base for taxes.
+
+Privacy: what this tool returns goes to the chat model, so the model provider sees your balances. Use the `kraken` CLI command if you'd rather keep them local.
+
 ## RPC cache
 
 Every RPC read goes through a cache keyed by endpoint, method and parameters. How long an answer is kept depends on whether it can change:
@@ -206,7 +226,7 @@ Measured on live devnet, loading the same 20-transaction history twice: **34.8 s
 
 ```bash
 python -m pytest            # against a fake RPC, a fake model and a hashing embedder, no network
-SOLGRAPH_TEST_PG_DSN=postgresql://... SOLGRAPH_TEST_REDIS_URL=redis://... python -m pytest   # also AGE, pgvector and Redis: 78 tests
+SOLGRAPH_TEST_PG_DSN=postgresql://... SOLGRAPH_TEST_REDIS_URL=redis://... python -m pytest   # also AGE, pgvector and Redis: 99 tests
 ```
 
 ## Known limits

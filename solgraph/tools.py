@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from .graph import GraphStore, counterparties, trace_origin
 from .ingest import ingest_wallet
+from .kraken import KrakenError, Portfolio
 from .models import Address, Mint
 from .monitor import Monitor
 from .rag import DocsIndex
@@ -26,7 +27,7 @@ from .rpc import RpcError, SolanaRpc
 ALLOWED = frozenset({
     "wallet_balances", "recent_transactions", "wallet_counterparties",
     "trace_token_origin", "token_info", "check_wallet_changes", "graph_stats",
-    "search_solana_docs",
+    "search_solana_docs", "my_kraken_portfolio",
 })
 
 
@@ -54,6 +55,11 @@ class DocsIn(BaseModel):
                        description="A question or topic, e.g. 'how are transaction fees calculated'")
 
 
+class KrakenIn(BaseModel):
+    asset: str | None = Field(None, pattern=r"^[A-Za-z0-9]{2,10}$",
+                              description="Only this asset, e.g. 'SOL'. Leave empty for everything.")
+
+
 class TokenIn(BaseModel):
     query: str = Field(min_length=1, max_length=64,
                        description="A token mint address or a ticker such as 'SOL' or 'USDC'")
@@ -69,6 +75,8 @@ class Toolbox:
     monitor: Monitor | None = None
     docs: DocsIndex | None = None
     docs_error: str | None = None  # why there is no docs index, told to the model as is
+    kraken: Portfolio | None = None
+    kraken_error: str | None = None
 
     def wallet_balances(self, address: str) -> str:
         bal = self.rpc.balances(address)
@@ -142,6 +150,14 @@ class Toolbox:
                     "of each page you use. If none of them answers the question, say so.",
         })
 
+    def my_kraken_portfolio(self, asset: str | None = None) -> str:
+        if self.kraken is None:
+            return json.dumps({"error": self.kraken_error or "Kraken is not connected."})
+        try:
+            return json.dumps(self.kraken.summary(asset))
+        except (KrakenError, httpx.HTTPError) as e:
+            return json.dumps({"error": str(e)})
+
 
 def _safe(fn):
     """Errors come back to the model as text it can explain, not as a crash."""
@@ -184,6 +200,10 @@ def build_tools(box: Toolbox) -> list[StructuredTool]:
          "Search the official Solana documentation (core concepts, tokens, RPC methods) and "
          "return the most relevant passages with their page URLs, for questions about how "
          "Solana works rather than about a specific wallet."),
+        ("my_kraken_portfolio", KrakenIn,
+         "The person's OWN Kraken exchange account, read-only: what they hold (spot and "
+         "staked), its value now, average buy price, staking rewards, deposits and withdrawals. "
+         "Use for questions like 'how is my SOL doing'."),
     ]
     tools = [StructuredTool.from_function(func=_safe(getattr(box, name)), name=name,
                                           description=desc, args_schema=schema,
