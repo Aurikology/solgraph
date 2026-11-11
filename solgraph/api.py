@@ -67,7 +67,8 @@ def health():
     return {"network": a.settings.network, "graph": type(a.graph).__name__, "cache": cache,
             "cache_hits": a.rpc.hits, "cache_misses": a.rpc.misses, **a.graph.stats(),
             "docs_store": type(docs.store).__name__ if docs else None,
-            "docs_chunks": docs.count() if docs else 0}
+            "docs_chunks": docs.count() if docs else 0,
+            "kraken": a.box.kraken is not None}
 
 
 @app.get("/kb/search")

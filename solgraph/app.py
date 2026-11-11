@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from .cache import open_cache
 from .config import Settings
 from .graph import GraphStore, open_graph
+from .kraken import KrakenClient, Portfolio
 from .market import KitMarket
 from .monitor import Monitor
 from .rag import DocsIndex, make_embedder, open_docstore
@@ -29,6 +30,21 @@ def open_docs(s: Settings) -> tuple[DocsIndex | None, str | None]:
         return None, str(e)
 
 
+def open_kraken(s: Settings) -> tuple[Portfolio | None, str | None]:
+    """The keys are read straight from the environment and never stored on Settings, so they
+    can't show up in a printed config."""
+    key = (os.environ.get("KRAKEN_API_KEY") or "").strip()
+    secret = (os.environ.get("KRAKEN_API_SECRET") or "").strip()
+    if not key and not secret:
+        return None, ("Kraken is not connected. Create a read-only API key on Kraken (only "
+                      "'Query Funds' and 'Query Ledger Entries') and put it in .env as "
+                      "KRAKEN_API_KEY and KRAKEN_API_SECRET.")
+    try:
+        return Portfolio(KrakenClient(key, secret), quote=s.kraken_quote), None
+    except ValueError as e:
+        return None, str(e)
+
+
 @dataclass
 class App:
     settings: Settings
@@ -45,6 +61,7 @@ class App:
         graph = open_graph(s.pg_dsn, s.graph_name)
         box = Toolbox(rpc=rpc, graph=graph, market=KitMarket(), monitor=Monitor())
         box.docs, box.docs_error = open_docs(s)
+        box.kraken, box.kraken_error = open_kraken(s)
         return cls(s, rpc, graph, box)
 
     @property
