@@ -235,9 +235,7 @@ class Portfolio:
                 held[name][where] = held[name].get(where, 0.0) + _d(amt)
         stats = summarise_ledger(entries)
         names = sorted(set(held) | {a for a, s in stats.items() if s.bought or s.rewards or s.bonuses})
-        if asset:
-            names = [n for n in names if n == asset.upper()]
-        rows, total = [], 0.0
+        rows, total = [], 0.0  # the total is the whole account, even when one asset is asked for
         for name in names:
             qty = sum(held.get(name, {}).values())
             price, cur = self._price(name) if qty else (None, None)
@@ -269,7 +267,7 @@ class Portfolio:
                 row["withdrawn_to_outside"] = round(s.withdrawn, 8)
             rows.append(row)
         return {
-            "assets": rows,
+            "assets": [r for r in rows if not asset or r["asset"] == asset.upper()],
             f"total_value_{self.quote.lower()}": round(total, 2),
             "ledger_entries_read": len(entries),
             "history_complete": complete,

@@ -166,6 +166,7 @@ def test_asset_filter_and_cache():
     n = len(fake.requests)
     only = p.summary("sol")
     assert [a["asset"] for a in only["assets"]] == ["SOL"]
+    assert only["total_value_cad"] == p.summary()["total_value_cad"]  # still the whole account
     private = [r for r in fake.requests[n:] if "/private/" in r.url.path]
     assert private == []  # second call within the TTL reads the cache
 
